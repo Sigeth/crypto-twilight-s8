@@ -1,5 +1,5 @@
 import sys
-from src.view_certificate import *
+from src.verify import verify_certificate_chain
 
 help_command = """
 validate_cert -format DER|PEM cert1.pem cert2.pem ...
@@ -20,7 +20,7 @@ def main(args):
         print(help_command)
         sys.exit(1)
 
-    if view_certificate(file_format, args[2:]):
+    if verify_certificate_chain(file_format, args[2:]):
         print("Certificate chain is ok :)")
     else:
         print("Certificate chain is bad :(")
