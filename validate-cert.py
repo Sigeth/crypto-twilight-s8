@@ -8,7 +8,6 @@ validate_cert -format DER|PEM cert1.pem cert2.pem ...
 """
 
 def main(args):
-    print(args)
     if len(args) < 3:
         print(help_command)
         sys.exit(1)
@@ -21,8 +20,10 @@ def main(args):
         print(help_command)
         sys.exit(1)
 
-    for file in args[2:]:
-        view_certificate(file_format, file)
+    if view_certificate(file_format, args[2:]):
+        print("Certificate chain is ok :)")
+    else:
+        print("Certificate chain is bad :(")
 
 if __name__ == "__main__":
     main(sys.argv[1:])
