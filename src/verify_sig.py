@@ -68,8 +68,8 @@ def verify_cert_signature(mode, public_key, message, signature, hash_algorithm):
     else:  # ECDSA
         # Get curve parameters
         curve = Curve.get_curve(public_key.public_numbers().curve.name)
-        n = curve._domain["order"]
-        G = curve._domain["generator"]
+        n = curve.order
+        G = curve.generator
 
         # Create a point from the public key coordinates
         Qa = Point(public_key.public_numbers().x, public_key.public_numbers().y, curve)

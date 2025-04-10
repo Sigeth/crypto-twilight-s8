@@ -8,11 +8,15 @@ cryptographic functions in pure Python.
 
 from src.verify_extensions import verify_key_usage, verify_basic_constraints
 from src.verify_sig import verify_cert_signature
+from src.logger import get_logger
 
 from datetime import datetime as dt
 from datetime import timezone
 
 from cryptography import x509
+
+
+logger = get_logger()
 
 
 def load_cert(file_format, file_name):
@@ -52,18 +56,18 @@ def verify_certificate(cert, ca_cert=None):
     """
     # Check key usage
     if not verify_key_usage(cert, ca_cert):
-        print("Invalid Key Usage")
+        logger.info("Key Usage verification failed")
         return False
 
     # Check basic constraints
     if not verify_basic_constraints(cert, ca_cert):
-        print("Invalid Basic Constraints")
+        logger.info("Basic Constraints verification failed")
         return False
 
     # Check validity period
     current_time = dt.now(timezone.utc)
     if current_time < cert.not_valid_before_utc or current_time > cert.not_valid_after_utc:
-        print("Certificate expired")
+        logger.info("Certificate expired")
         return False
 
     # Check signature algorithm
@@ -101,8 +105,8 @@ def verify_certificate(cert, ca_cert=None):
                 cert.signature_hash_algorithm
             )
     else:
-        print("Unsupported Algorithm")
-        print(cert.signature_algorithm_oid)
+        logger.info("Unsupported Algorithm")
+        logger.debug(f'Algorithm OID: {cert.signature_algorithm_oid}')
         return False
 
 
@@ -127,10 +131,15 @@ def verify_certificate_chain(file_format: str, certs):
         cert.verify_directly_issued_by(cert)
         return verify_certificate(cert)
     else:
+        # Check if there is a CA certificate
+        if len(certs[:-1]) == 0:
+            logger.info("Missing CA certificate")
+            return False
+
         # Load the issuing CA certificate
         ca_cert = load_cert(file_format, certs[-2])
         if ca_cert is None:
-            print("CA Certificate not found")
+            logger.info("CA Certificate not found")
             return False
 
         # Recursively verify the rest of the chain
