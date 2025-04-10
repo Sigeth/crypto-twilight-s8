@@ -1,5 +1,14 @@
 import sys
 from src.view_certificate import *
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+
+
+
+
+cert = x509.load_pem_x509_certificate(pem_data, default_backend())
+cert.serial_number
+
 
 help_command = """
 validate_cert -format DER|PEM cert1.pem cert2.pem ...
