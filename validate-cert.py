@@ -1,30 +1,68 @@
-import sys
+#!/usr/bin/env python3
 from src.verify import verify_certificate_chain
+from src.colors import *
+from src.logger import set_verbose_mode, get_logger
 
-help_command = """
-validate_cert -format DER|PEM cert1.pem cert2.pem ...
+import sys
+import argparse
 
--format: DER or PEM, defines the format of your files
-"""
 
-def main(args):
-    if len(args) < 3:
-        print(help_command)
-        sys.exit(1)
-    if args[0] != "-format":
-        print(help_command)
-        sys.exit(1)
+def parse_arguments():
+    """Parse command line arguments using argparse."""
+    parser = argparse.ArgumentParser(
+        description="Validate certificate chains",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
 
-    file_format = args[1]
-    if file_format not in "DERPEM":
-        print(help_command)
-        sys.exit(1)
+    parser.add_argument(
+        "-f", "--format",
+        choices=["DER", "PEM"],
+        required=True,
+        help="Certificate format (DER or PEM)"
+    )
 
-    if verify_certificate_chain(file_format, args[2:]):
-        print("Certificate chain is ok :)")
-    else:
-        print("Certificate chain is bad :(")
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable verbose output"
+    )
+
+    parser.add_argument(
+        "certificates",
+        nargs="+",
+        help="Certificate files to validate"
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    """Main entry point for the certificate validation tool."""
+    try:
+        args = parse_arguments()
+
+        # Set global verbose mode and get a logger for this module
+        set_verbose_mode(args.verbose)
+        logger = get_logger()
+
+        if args.verbose:
+            logger.debug(f"Running with format: {args.format}")
+            logger.debug(f"Certificates to verify: {args.certificates}")
+
+        # Verify the certificate chain
+        result = verify_certificate_chain(args.format, args.certificates)
+
+        if result:
+            print(colored("✓ Certificate chain is valid", Colors.GREEN))
+            return 0
+        else:
+            print(colored("✗ Certificate chain is invalid", Colors.RED))
+            return 1
+
+    except Exception as e:
+        print(colored(f"Error: {str(e)}", Colors.RED))
+        return 1
+
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
-    sys.exit(0)
+    sys.exit(main())
