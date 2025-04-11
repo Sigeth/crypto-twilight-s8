@@ -55,28 +55,58 @@ def check_ocsp(cert, issuer):
         except Exception as e:
             pass
     return None
+import os
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+import requests
+
+# Dossier pour stocker les CRLs téléchargées
+CACHE_DIR = "crl_cache"
 
 def check_crl(cert):
-    url = get_url(cert, ExtensionOID.CRL_DISTRIBUTION_POINTS)
-    if url:
+    # S'assurer que le dossier de cache existe
+    if not os.path.exists(CACHE_DIR):
+        os.makedirs(CACHE_DIR)
+    
+    url = get_url(cert, x509.ExtensionOID.CRL_DISTRIBUTION_POINTS)
+    if not url:
+        return None
+    
+    # Utiliser le numéro de série du certificat comme nom de fichier
+    cache_filename = f"crl_{cert.serial_number}.der"
+    cache_path = os.path.join(CACHE_DIR, cache_filename)
+    
+    # Vérifier si on a déjà cette CRL en cache
+    crl = None
+    if os.path.exists(cache_path):
+        try:
+            # Charger la CRL du cache
+            with open(cache_path, "rb") as f:
+                crl = x509.load_der_x509_crl(f.read(), default_backend())
+        except Exception:
+            # Si erreur lors du chargement, on considère que le cache est invalide
+            os.remove(cache_path)
+            crl = None
+    
+    # Si pas en cache, télécharger la CRL
+    if crl is None:
         try:
             resp = requests.get(url, timeout=10)
-            temp = "crl.tmp"
-            with open(temp, "wb") as f:
+            with open(cache_path, "wb") as f:
                 f.write(resp.content)
-            with open(temp, "rb") as f:
+            with open(cache_path, "rb") as f:
                 crl = x509.load_der_x509_crl(f.read(), default_backend())
-            os.remove(temp)
-            for revoked in crl:
-                if revoked.serial_number == cert.serial_number:
-                    return {"status": "REVOKED"}
-            return {"status": "GOOD"}
-        except:
-            pass
-    return None
+        except Exception:
+            return None
+    
+    # Vérifier si le certificat est révoqué
+    for revoked in crl:
+        if revoked.serial_number == cert.serial_number:
+            return {"status": "REVOKED"}
+    return {"status": "GOOD"}
 
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) !=  3:
         print("Usage: python script.py <pem|der> <cert_path>")
         return
 
