@@ -4,6 +4,7 @@ from src.colors import *
 from src.logger import set_verbose_mode, get_logger
 
 import sys
+
 import argparse
 
 
@@ -44,6 +45,7 @@ def main():
         # Set global verbose mode and get a logger for this module
         set_verbose_mode(args.verbose)
         logger = get_logger()
+
 
         if args.verbose:
             logger.debug(f"Running with format: {args.format}")
