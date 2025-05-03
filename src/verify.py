@@ -6,15 +6,20 @@ external cryptographic libraries like pycryptodome. It implements the necessary
 cryptographic functions in pure Python.
 """
 
-from src.verify_extensions import verify_key_usage, verify_basic_constraints
-from src.verify_sig import verify_cert_signature
-from src.logger import get_logger
+from src.verify_extensions import *
+from src.verify_sig import *
+from src.logger import *
 
 from datetime import datetime as dt
 from datetime import timezone
 
 from cryptography import x509
 
+from cryptography.x509.oid import ExtensionOID, AuthorityInformationAccessOID
+import os
+from src.verif_CRL import check_crl
+from src.verif_OCSP import check_ocsp
+from src.verify_utils import *  
 
 logger = get_logger()
 
@@ -69,7 +74,11 @@ def verify_certificate(cert, ca_cert=None):
     if current_time < cert.not_valid_before_utc or current_time > cert.not_valid_after_utc:
         logger.info("Certificate expired")
         return False
+    
 
+    if(verifyCRLOCSP(cert) == False and cert.issuer != cert.subject):
+        logger.info("problème dans la vérification du CRL/OCSP")
+        return False
     # Check signature algorithm
     algo_cert = cert.signature_algorithm_oid
     supported_algorithms = [
@@ -84,10 +93,9 @@ def verify_certificate(cert, ca_cert=None):
             pub_key = cert.public_key()
         else:
             pub_key = ca_cert.public_key()
-
+      
         signature = cert.signature
 
-        # Verify signature based on algorithm type
         if algo_cert.dotted_string == "1.2.840.113549.1.1.11":  # RSA
             return verify_cert_signature(
                 "RSA",
@@ -108,7 +116,106 @@ def verify_certificate(cert, ca_cert=None):
         logger.info("Unsupported Algorithm")
         logger.debug(f'Algorithm OID: {cert.signature_algorithm_oid}')
         return False
-
+    
+def verifyCRLOCSP(cert, ca_cert=None):
+    """
+    Verify certificate revocation status using OCSP and CRL.
+    
+    Args:
+        cert: The certificate to check
+        ca_cert: The issuer's certificate (optional)
+    
+    Returns:
+        bool: True if certificate is valid, False if revoked or check fails
+    """
+    try:
+        logger.info("=== Starting CRL/OCSP verification ===")
+        logger.info(f"Certificate subject: {cert.subject}")
+        logger.info(f"Certificate serial number: {cert.serial_number}")
+        
+        # Check if this is a root certificate
+        is_root = cert.issuer == cert.subject
+        logger.info(f"Is root certificate: {is_root}")
+        
+        # Root certificates often don't have CRL/OCSP
+        if is_root:
+            logger.info("Root certificate detected - skipping CRL/OCSP check")
+            return True
+        
+        # Get OCSP URL
+        ocsp_url = get_url(cert, ExtensionOID.AUTHORITY_INFORMATION_ACCESS, AuthorityInformationAccessOID.OCSP)
+        logger.info(f"OCSP URL found: {ocsp_url}")
+        
+        # Get CRL URL
+        crl_url = get_url(cert, ExtensionOID.CRL_DISTRIBUTION_POINTS)
+        logger.info(f"CRL URL found: {crl_url}")
+        
+        # Use ca_cert as issuer certificate
+        issuer_cert = ca_cert
+        logger.info(f"Issuer certificate provided: {issuer_cert is not None}")
+        
+        # Try OCSP first
+        if issuer_cert and ocsp_url:
+            logger.info("Attempting OCSP verification...")
+            logger.info(f"Using OCSP URL: {ocsp_url}")
+            
+            ocsp_result = check_ocsp(cert, issuer_cert, ocsp_url)
+            logger.info(f"OCSP result: {ocsp_result}")
+            
+            if ocsp_result:
+                if ocsp_result['status'] == "GOOD":
+                    logger.info("✓ OCSP check PASSED - Certificate is valid")
+                    return True
+                else:
+                    logger.warning(f"✗ OCSP check FAILED - Status: {ocsp_result['status']}")
+                    return False
+            else:
+                logger.warning("OCSP check returned None - falling back to CRL")
+        else:
+            logger.info(f"OCSP check skipped - issuer_cert: {issuer_cert is not None}, ocsp_url: {ocsp_url is not None}")
+        
+        # If OCSP fails or is not available, try CRL
+        if crl_url:
+            logger.info("Attempting CRL verification...")
+            logger.info(f"Using CRL URL: {crl_url}")
+            
+            crl_result = check_crl(cert, crl_url)
+            logger.info(f"CRL result: {crl_result}")
+            
+            if crl_result:
+                if crl_result['status'] == "GOOD":
+                    logger.info("✓ CRL check PASSED - Certificate is valid")
+                    return True
+                else:
+                    logger.warning(f"✗ CRL check FAILED - Status: {crl_result['status']}")
+                    return False
+            else:
+                logger.warning("CRL check returned None")
+        else:
+            logger.warning("No CRL URL available")
+        
+        # If neither OCSP nor CRL is available, decide based on certificate type
+        if not ocsp_url and not crl_url:
+            logger.warning("Neither OCSP nor CRL URLs available")
+            
+            # For non-root certificates without revocation info, this might be a problem
+            # For root certificates, it's usually normal
+            if is_root:
+                logger.info("Root certificate without revocation info - considering valid")
+                return True
+            else:
+                logger.warning("Non-root certificate without revocation info - considering invalid")
+                return False
+        
+        logger.warning("✗ Neither OCSP nor CRL check could be performed successfully")
+        return False
+        
+    except Exception as e:
+        logger.error(f"✗ Error in verifyCRLOCSP: {type(e).__name__}: {e}")
+        logger.exception("Full traceback:")
+        return False
+    finally:
+        logger.info("=== Finished CRL/OCSP verification ===\n")
 
 def verify_certificate_chain(file_format: str, certs):
     """
@@ -121,27 +228,21 @@ def verify_certificate_chain(file_format: str, certs):
     Returns:
         bool: True if the certificate chain is valid, False otherwise
     """
-    # Load the certificate to verify (last in the chain)
     cert = load_cert(file_format, certs[-1])
     if cert is None:
         return False
 
-    # Check if it's a self-signed certificate
     if cert.issuer == cert.subject:
         cert.verify_directly_issued_by(cert)
         return verify_certificate(cert)
     else:
-        # Check if there is a CA certificate
         if len(certs[:-1]) == 0:
             logger.info("Missing CA certificate")
             return False
-
-        # Load the issuing CA certificate
         ca_cert = load_cert(file_format, certs[-2])
         if ca_cert is None:
             logger.info("CA Certificate not found")
             return False
-
         # Recursively verify the rest of the chain
         if verify_certificate_chain(file_format, certs[:-1]):
             cert.verify_directly_issued_by(ca_cert)
