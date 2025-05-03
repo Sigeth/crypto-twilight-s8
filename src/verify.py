@@ -129,45 +129,37 @@ def verifyCRLOCSP(cert, ca_cert=None):
         bool: True if certificate is valid, False if revoked or check fails
     """
     try:
-        logger.info("=== Starting CRL/OCSP verification ===")
-        logger.info(f"Certificate subject: {cert.subject}")
-        logger.info(f"Certificate serial number: {cert.serial_number}")
+ 
         
         # Check if this is a root certificate
         is_root = cert.issuer == cert.subject
-        logger.info(f"Is root certificate: {is_root}")
+        
         
         # Root certificates often don't have CRL/OCSP
         if is_root:
-            logger.info("Root certificate detected - skipping CRL/OCSP check")
             return True
         
         # Get OCSP URL
         ocsp_url = get_url(cert, ExtensionOID.AUTHORITY_INFORMATION_ACCESS, AuthorityInformationAccessOID.OCSP)
-        logger.info(f"OCSP URL found: {ocsp_url}")
         
         # Get CRL URL
         crl_url = get_url(cert, ExtensionOID.CRL_DISTRIBUTION_POINTS)
-        logger.info(f"CRL URL found: {crl_url}")
         
         # Use ca_cert as issuer certificate
         issuer_cert = ca_cert
-        logger.info(f"Issuer certificate provided: {issuer_cert is not None}")
         
         # Try OCSP first
         if issuer_cert and ocsp_url:
-            logger.info("Attempting OCSP verification...")
-            logger.info(f"Using OCSP URL: {ocsp_url}")
+
             
             ocsp_result = check_ocsp(cert, issuer_cert, ocsp_url)
-            logger.info(f"OCSP result: {ocsp_result}")
+
             
             if ocsp_result:
                 if ocsp_result['status'] == "GOOD":
                     logger.info("✓ OCSP check PASSED - Certificate is valid")
                     return True
                 else:
-                    logger.warning(f"✗ OCSP check FAILED - Status: {ocsp_result['status']}")
                     return False
             else:
                 logger.warning("OCSP check returned None - falling back to CRL")
@@ -176,11 +168,9 @@ def verifyCRLOCSP(cert, ca_cert=None):
         
         # If OCSP fails or is not available, try CRL
         if crl_url:
-            logger.info("Attempting CRL verification...")
-            logger.info(f"Using CRL URL: {crl_url}")
+
             
             crl_result = check_crl(cert, crl_url)
-            logger.info(f"CRL result: {crl_result}")
             
             if crl_result:
                 if crl_result['status'] == "GOOD":
@@ -214,8 +204,6 @@ def verifyCRLOCSP(cert, ca_cert=None):
         logger.error(f"✗ Error in verifyCRLOCSP: {type(e).__name__}: {e}")
         logger.exception("Full traceback:")
         return False
-    finally:
-        logger.info("=== Finished CRL/OCSP verification ===\n")
 
 def verify_certificate_chain(file_format: str, certs):
     """
