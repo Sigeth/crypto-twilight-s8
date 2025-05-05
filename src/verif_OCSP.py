@@ -1,8 +1,7 @@
-import sys, requests, os
+import requests, os
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.x509.ocsp import OCSPRequestBuilder, load_der_ocsp_response
-from cryptography.x509.oid import ExtensionOID, AuthorityInformationAccessOID
 from src.logger import *
 import logging
 

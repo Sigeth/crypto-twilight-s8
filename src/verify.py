@@ -79,6 +79,7 @@ def verify_certificate(cert, ca_cert=None):
     if(verifyCRLOCSP(cert) == False and cert.issuer != cert.subject):
         logger.info("problème dans la vérification du CRL/OCSP")
         return False
+
     # Check signature algorithm
     algo_cert = cert.signature_algorithm_oid
     supported_algorithms = [
@@ -128,53 +129,46 @@ def verifyCRLOCSP(cert, ca_cert=None):
     Returns:
         bool: True if certificate is valid, False if revoked or check fails
     """
-    try:
- 
-        
+    try:        
         # Check if this is a root certificate
         is_root = cert.issuer == cert.subject
-        
-        
+
         # Root certificates often don't have CRL/OCSP
         if is_root:
             return True
-        
+
         # Get OCSP URL
         ocsp_url = get_url(cert, ExtensionOID.AUTHORITY_INFORMATION_ACCESS, AuthorityInformationAccessOID.OCSP)
-        
+
         # Get CRL URL
         crl_url = get_url(cert, ExtensionOID.CRL_DISTRIBUTION_POINTS)
-        
+
         # Use ca_cert as issuer certificate
         issuer_cert = ca_cert
-        
+
         # Try OCSP first
         if issuer_cert and ocsp_url:
-
-            
             ocsp_result = check_ocsp(cert, issuer_cert, ocsp_url)
 
-            
             if ocsp_result:
                 if ocsp_result['status'] == "GOOD":
-                    logger.info("✓ OCSP check PASSED - Certificate is valid")
+                    logger.debug("✓ OCSP check PASSED - Certificate is valid")
                     return True
                 else:
                     return False
             else:
                 logger.warning("OCSP check returned None - falling back to CRL")
         else:
-            logger.info(f"OCSP check skipped - issuer_cert: {issuer_cert is not None}, ocsp_url: {ocsp_url is not None}")
-        
+            logger.debug(f"OCSP check skipped - issuer_cert: {issuer_cert is not None}, ocsp_url: {ocsp_url is not None}")
+
         # If OCSP fails or is not available, try CRL
         if crl_url:
 
-            
             crl_result = check_crl(cert, crl_url)
-            
+
             if crl_result:
                 if crl_result['status'] == "GOOD":
-                    logger.info("✓ CRL check PASSED - Certificate is valid")
+                    logger.debug("✓ CRL check PASSED - Certificate is valid")
                     return True
                 else:
                     logger.warning(f"✗ CRL check FAILED - Status: {crl_result['status']}")
@@ -183,23 +177,23 @@ def verifyCRLOCSP(cert, ca_cert=None):
                 logger.warning("CRL check returned None")
         else:
             logger.warning("No CRL URL available")
-        
+
         # If neither OCSP nor CRL is available, decide based on certificate type
         if not ocsp_url and not crl_url:
             logger.warning("Neither OCSP nor CRL URLs available")
-            
+
             # For non-root certificates without revocation info, this might be a problem
             # For root certificates, it's usually normal
             if is_root:
-                logger.info("Root certificate without revocation info - considering valid")
+                logger.debug("Root certificate without revocation info - considering valid")
                 return True
             else:
                 logger.warning("Non-root certificate without revocation info - considering invalid")
                 return False
-        
+
         logger.warning("✗ Neither OCSP nor CRL check could be performed successfully")
         return False
-        
+
     except Exception as e:
         logger.error(f"✗ Error in verifyCRLOCSP: {type(e).__name__}: {e}")
         logger.exception("Full traceback:")
